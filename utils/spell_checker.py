@@ -1,4 +1,5 @@
 from spellchecker import SpellChecker
+import string # Import string module for punctuation characters
 
 class SpellCheckerUtil:
     def __init__(self):
@@ -9,22 +10,34 @@ class SpellCheckerUtil:
         Finds misspelled words in the given text content.
         Returns a list of misspelled words.
         """
-        # Simple split by space and punctuation, can be improved
         words = text_content.lower().split()
-        # Remove punctuation from words for more accurate checking
-        # This is a basic approach; a more robust tokenizer might be needed
-        cleaned_words = [word.strip('.,!?;:"\'()[]{}') for word in words]
 
-        # misspelled = self.spell.unknown(cleaned_words)
-        # return list(misspelled)
+        processed_words = []
+        for word in words:
+            cleaned_word = word.strip(string.punctuation)
+            # Filter out empty strings or strings that were purely punctuation
+            if cleaned_word:
+                processed_words.append(cleaned_word)
 
-        # We need to return words and their suggestions
+        if not processed_words:
+            return []
+
         misspelled_info = []
         # Using a set for unique words to check, as a word might be misspelled multiple times
-        unique_cleaned_words = sorted(list(set(cleaned_words)))
+        # Also, filter out any words that became empty after stripping all possible punctuation.
+        unique_processed_words = sorted(list(set(p_word for p_word in processed_words if p_word)))
 
-        for word in unique_cleaned_words:
-            if not self.spell.correction(word) == word : # Check if word is actually misspelled
+
+        for word in unique_processed_words:
+            # Additional check: ensure the word itself is not just punctuation remains,
+            # though strip(string.punctuation) should handle most cases.
+            # An example could be a word like "---" if '-' is not in string.punctuation by default.
+            # However, string.punctuation is quite comprehensive.
+            if not word: # Skip if word became empty after aggressive stripping (should be rare now)
+                continue
+
+            # Check if the word is known or not by the spellchecker
+            if not self.spell.correction(word) == word :
                  # correction() returns the word itself if it's known/correct.
                  # We are interested in words where correction() is different or it's unknown.
                  # The method `unknown` returns a set of words that are not in the dictionary.
