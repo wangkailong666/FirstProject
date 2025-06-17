@@ -8,7 +8,7 @@ a = Analysis(['main.py'],
              pathex=[],
              binaries=[],
              datas=[('./utils', 'utils'), ('./ui', 'ui')], # Include utils and ui directories
-             hiddenimports=['tkinter', 'spellchecker'], # Ensure pyspellchecker (spellchecker) is included
+             hiddenimports=['tkinter', 'tkinter.ttk', 'spellchecker'], # Ensure pyspellchecker (spellchecker) and ttk is included
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
@@ -26,7 +26,7 @@ exe = EXE(pyz,
           debug=False,
           bootloader_ignore_signals=False,
           strip=False,
-          upx=True,
+          upx=False, # UPX disabled
           console=False, # False for windowed (GUI) application
           icon=None) # Can specify an icon file here if available
 coll = COLLECT(exe,
@@ -34,6 +34,6 @@ coll = COLLECT(exe,
                a.zipfiles,
                a.datas,
                strip=False,
-               upx=True,
+               upx=False, # UPX disabled
                upx_exclude=[],
                name='TextEditorApp')

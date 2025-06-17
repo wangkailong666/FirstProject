@@ -30,5 +30,8 @@ To create a standalone executable from the source code, you can use PyInstaller.
     ```
 
 3.  **Find the executable:**
-    After the build process completes, you will find the executable in a new directory named `dist`.
-    Inside `dist`, you should see `TextEditorApp` (or `TextEditorApp.exe` on Windows). This is the standalone application.
+    After the build process completes, PyInstaller will create a directory named `dist/`. Inside `dist/`, you will find a folder named `TextEditorApp` (this name is based on the `name` parameter in your `main.spec` file).
+
+    Navigate into this `dist/TextEditorApp` folder. The main executable (`TextEditorApp.exe` on Windows, or `TextEditorApp` on macOS/Linux) will be located here, along with other necessary files and DLLs.
+
+   **Note on Output:** These instructions and the default `main.spec` configuration produce a one-folder bundle (the application along with its dependencies in a directory). This is generally more reliable for compatibility than single-file executables, especially when troubleshooting.
