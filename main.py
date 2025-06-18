@@ -1,7 +1,10 @@
 import tkinter as tk
 from tkinter import scrolledtext, filedialog, messagebox
 from utils.spell_checker import SpellCheckerUtil
-from ui.spell_dialog import SpellCheckDialog # Import the new dialog
+from utils.text_analysis import find_space_around_period_anomalies, parse_line_ranges
+from ui.spell_dialog import SpellCheckDialog
+from ui.color_chooser_dialog import ColorChooserDialog
+from ui.advanced_space_delete_dialog import AdvancedSpaceDeleteDialog # Import new dialog
 
 class TextEditor(tk.Tk):
     def __init__(self):
@@ -9,7 +12,9 @@ class TextEditor(tk.Tk):
         self.title("Simple Text Editor")
         self.geometry("800x600")
 
-        self.highlight_spaces_active = tk.BooleanVar(value=False) # Variable for checkbutton state
+        self.highlight_spaces_active = tk.BooleanVar(value=False)
+        self.period_spacing_highlight_active = tk.BooleanVar(value=False)
+        self.space_highlight_color = tk.StringVar(value="lightgray") # Default color
 
         self._create_menu()
         self._create_text_area()
@@ -33,17 +38,38 @@ class TextEditor(tk.Tk):
         edit_menu.add_command(label="Paste", command=self.paste_text)
         edit_menu.add_separator()
         edit_menu.add_command(label="Spell Check", command=self.spell_check_text)
-        edit_menu.add_checkbutton(label="Highlight Spaces", onvalue=True, offvalue=False, variable=self.highlight_spaces_active, command=self.toggle_highlight_spaces)
+        # Space Highlighting Submenu
+        space_highlight_menu = tk.Menu(edit_menu, tearoff=0)
+        space_highlight_menu.add_checkbutton(
+            label="Enable/Disable",
+            variable=self.highlight_spaces_active,
+            command=self.apply_or_clear_space_highlighting # Renamed/refactored method
+        )
+        space_highlight_menu.add_command(label="Set Highlight Color...", command=self.set_space_highlight_color)
+        edit_menu.add_cascade(label="Space Highlighting", menu=space_highlight_menu)
+
         edit_menu.add_separator()
         edit_menu.add_command(label="Delete All Spaces in Document", command=self.delete_all_spaces)
         edit_menu.add_command(label="Delete Spaces in Selected Lines", command=self.delete_spaces_in_selected_lines)
+        edit_menu.add_separator()
+        edit_menu.add_checkbutton(
+            label="Highlight Period Spacing",
+            onvalue=True, offvalue=False,
+            variable=self.period_spacing_highlight_active,
+            command=self.apply_or_clear_period_spacing_highlight
+        )
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Advanced Space Deletion...", command=self.show_advanced_space_delete_dialog)
+
 
     def _create_text_area(self):
         self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD)
         # Configure a tag for highlighting misspelled words
         self.text_area.tag_configure("misspelled", background="yellow", foreground="red")
-        # Configure a tag for highlighting spaces
-        self.text_area.tag_configure("space", background="lightgray")
+        # Configure a tag for highlighting spaces - initial configuration
+        self.text_area.tag_configure("space", background=self.space_highlight_color.get())
+        # Configure a tag for format anomalies (e.g., space around period)
+        self.text_area.tag_configure("format_anomaly", foreground="blue", underline=True)
         self.text_area.pack(expand=True, fill="both")
 
     def new_file(self):
@@ -249,43 +275,64 @@ class TextEditor(tk.Tk):
             self.text_area.config(state=tk.NORMAL)
             messagebox.showinfo("Spell Check", "Spell check cancelled.", parent=self)
 
-    def toggle_highlight_spaces(self):
+    def apply_or_clear_space_highlighting(self): # Renamed from toggle_highlight_spaces
         if self.highlight_spaces_active.get():
-            self._apply_space_highlighting()
+            self._apply_space_highlighting_logic()
         else:
-            self.text_area.tag_remove("space", "1.0", tk.END)
-            # If spell check highlighting was active, it might be good to re-apply it here.
-            # For now, this just removes space highlights.
-            # Users might need to re-run spell check if they want its highlights back immediately.
+            self._remove_space_highlighting_logic()
 
-    def _apply_space_highlighting(self):
-        # It's important to remove old "space" tags first,
-        # otherwise, if text is deleted, old highlights might remain.
-        self.text_area.tag_remove("space", "1.0", tk.END)
+    def _apply_space_highlighting_logic(self):
+        # This method assumes the "space" tag is already configured with the desired color.
+        # It just adds the tag to the characters.
+        # It's important to remove old "space" tags first if applying to entire document,
+        # or if text could have changed.
+        self._remove_space_highlighting_logic() # Clear before applying to prevent duplicates on re-call
 
         content = self.text_area.get("1.0", tk.END)
         start_index = "1.0"
-        space_char = " " # The character to highlight
+        space_char = " "
 
         while True:
             pos = self.text_area.search(space_char, start_index, stopindex=tk.END)
             if not pos:
                 break
-
-            # Define the end position for the tag (start + 1 character for a single space)
             line, char = map(int, pos.split('.'))
             end_pos = f"{line}.{char + 1}"
-
             self.text_area.tag_add("space", pos, end_pos)
-            start_index = end_pos # Move to the end of the found space for the next search
+            start_index = end_pos
 
-        # After applying space highlights, ensure that misspelled word highlights are still visible
-        # if spell check is active. This can be tricky due to tag overlaps.
-        # One approach is to re-apply the "misspelled" tag to words that are already known to be misspelled.
-        # Or, ensure "misspelled" tag has higher priority if Tkinter supports it directly (it doesn't simply).
-        # For now, the current spell_check_text method already handles re-applying space highlights
-        # if space highlighting is active when spell_check_text is called.
-        # And toggle_highlight_spaces just focuses on space tags.
+        # Interaction with other highlights (e.g., spell_check_text re-applying space highlights)
+        # needs to be considered if this logic is called from multiple places.
+        # For now, spell_check_text calls its own _apply_space_highlighting if active.
+        # This might need to be harmonized to _apply_space_highlighting_logic.
+        # Let's rename the old _apply_space_highlighting in spell_check_text context
+        # to avoid confusion or make it call this one.
+        # For now, this method is self-contained for space highlighting feature.
+
+    def _remove_space_highlighting_logic(self):
+        self.text_area.tag_remove("space", "1.0", tk.END)
+
+    def set_space_highlight_color(self):
+        dialog = ColorChooserDialog(self, title="Set Space Highlight Color", initialvalue=self.space_highlight_color.get())
+        if dialog.result:
+            # Basic validation: ensure the color string is not empty.
+            # More advanced validation could try to use it and catch TclError.
+            if dialog.result.strip():
+                self.space_highlight_color.set(dialog.result.strip())
+                # Re-configure the tag with the new color
+                try:
+                    self.text_area.tag_configure("space", background=self.space_highlight_color.get())
+                    # If highlighting is active, re-apply to show the new color
+                    if self.highlight_spaces_active.get():
+                        self._apply_space_highlighting_logic()
+                except tk.TclError as e:
+                    messagebox.showerror("Invalid Color", f"The color '{self.space_highlight_color.get()}' is not valid: {e}", parent=self)
+                    # Optionally revert to a default or previous valid color
+                    # self.space_highlight_color.set("lightgray") # Revert to default
+                    # self.text_area.tag_configure("space", background=self.space_highlight_color.get())
+            else:
+                messagebox.showwarning("Invalid Color", "Color cannot be empty.", parent=self)
+
 
     def delete_all_spaces(self):
         current_content = self.text_area.get("1.0", tk.END)
@@ -355,6 +402,117 @@ class TextEditor(tk.Tk):
         except tk.TclError:
             print("No text selected, or selection is invalid for deleting spaces in lines.")
             # This occurs if SEL_FIRST or SEL_LAST don't exist (no selection)
+
+    def apply_or_clear_period_spacing_highlight(self):
+        self.text_area.tag_remove("format_anomaly", "1.0", tk.END)
+
+        if not self.period_spacing_highlight_active.get():
+            return
+
+        current_text = self.text_area.get("1.0", tk.END)
+        # Guard against processing if text area is effectively empty (contains only newline)
+        if current_text.strip() == "":
+            return
+
+        anomalies = find_space_around_period_anomalies(current_text)
+
+        for start_char_idx, end_char_idx in anomalies:
+            try:
+                # Convert character offsets to Tkinter text indices
+                # The Text widget's "1.0 + N chars" index is robust for this.
+                tk_start_idx = self.text_area.index(f"1.0 + {start_char_idx} chars")
+                tk_end_idx = self.text_area.index(f"1.0 + {end_char_idx} chars")
+
+                # Ensure start is before end, and both are valid within the text content
+                if self.text_area.compare(tk_start_idx, "<", tk_end_idx) and \
+                   self.text_area.compare(tk_start_idx, ">=", "1.0") and \
+                   self.text_area.compare(tk_end_idx, "<=", tk.END + "-1c"): # tk.END includes a newline
+                    self.text_area.tag_add("format_anomaly", tk_start_idx, tk_end_idx)
+                else:
+                    # This might happen if text is modified while highlighting, or issues with index conversion
+                    # on complex text structures (though less likely with char offset method).
+                    print(f"Skipping anomaly (invalid range): {start_char_idx}-{end_char_idx} -> {tk_start_idx}-{tk_end_idx}")
+            except tk.TclError as e:
+                # This can happen if indices are out of bounds, e.g. "1.0 + 10000 chars" in a short text
+                print(f"Error applying tag for anomaly at char offsets {start_char_idx}-{end_char_idx}: {e}")
+
+    def show_advanced_space_delete_dialog(self):
+        dialog = AdvancedSpaceDeleteDialog(self, title="Advanced Space Deletion")
+        if dialog.result:
+            line_input_str, delete_type, specific_chars = dialog.result
+            if line_input_str is None: # User cancelled or input was invalid in dialog
+                # Dialog's apply method now sets result to None for empty line_input or char_input
+                # We can provide more specific feedback here based on what was None if desired
+                # For now, just a general message or do nothing.
+                # messagebox.showwarning("Input Error", "Invalid input provided in the dialog.", parent=self)
+                return
+            self.process_advanced_space_deletion(line_input_str, delete_type, specific_chars)
+
+    def process_advanced_space_deletion(self, line_input_str, delete_type, specific_chars):
+        try:
+            # Get total lines. Note: .index(tk.END) returns line AFTER the last line of text,
+            # so if there's text "Line1\nLine2", END is "3.0".
+            # If text area is empty, END is "1.0". If "Line1", END is "2.0".
+            # total_lines should be the actual number of lines with content.
+            content = self.text_area.get("1.0", tk.END + "-1c") # -1c to exclude final automatic newline
+            if not content:
+                total_lines_count = 0
+            else:
+                total_lines_count = len(content.splitlines())
+                if content.endswith('\n'): # If the content ends with a newline, splitlines might give one less than expected by 1-indexed user.
+                                         # However, total_lines_count from splitlines is accurate for 0-indexed processing.
+                    pass # total_lines_count is correct here for 0-indexed.
+
+            if total_lines_count == 0 and line_input_str.lower() != "all":
+                 if any(char.isdigit() for char in line_input_str): # If user typed line numbers for empty doc
+                    messagebox.showerror("Error", "Document is empty. No lines to process.", parent=self)
+                    return
+
+            target_lines_0_indexed = parse_line_ranges(line_input_str, total_lines_count)
+
+        except ValueError as e:
+            messagebox.showerror("Line Input Error", str(e), parent=self)
+            return
+
+        if not target_lines_0_indexed and total_lines_count > 0 : # Valid parse but resulted in no lines (e.g. "all" for empty doc was handled by parse_line_ranges)
+            messagebox.showinfo("Info", "No lines selected for processing based on input.", parent=self)
+            return
+        if not target_lines_0_indexed and total_lines_count == 0: # e.g. "all" for empty doc
+            messagebox.showinfo("Info", "Document is empty, no lines to process.", parent=self)
+            return
+
+
+        if delete_type == "all_on_lines":
+            # Iterate in reverse to avoid index shifting issues when deleting/inserting line by line
+            for line_idx in sorted(target_lines_0_indexed, reverse=True):
+                tk_line_start = f"{line_idx + 1}.0"
+                tk_line_end = f"{line_idx + 1}.end" # .end includes the newline char if present
+
+                line_text = self.text_area.get(tk_line_start, tk_line_end)
+
+                # Preserve newline if it exists, remove spaces from the rest
+                ends_with_newline = line_text.endswith('\n')
+                text_to_modify = line_text.rstrip('\n') if ends_with_newline else line_text
+
+                modified_text_part = text_to_modify.replace(" ", "")
+
+                # Re-append newline if it was there
+                modified_line_text = modified_text_part + ('\n' if ends_with_newline else '')
+
+                if modified_line_text != line_text:
+                    self.text_area.delete(tk_line_start, tk_line_end)
+                    self.text_area.insert(tk_line_start, modified_line_text)
+
+            messagebox.showinfo("Success", "Deleted all spaces on specified lines.", parent=self)
+
+        elif delete_type == "before_char":
+            messagebox.showinfo("Not Implemented", "Deletion of spaces before specific character(s) is not yet implemented.", parent=self)
+
+        # Consider re-applying highlights if active
+        if self.highlight_spaces_active.get():
+            self._apply_space_highlighting_logic()
+        if self.period_spacing_highlight_active.get():
+            self.apply_or_clear_period_spacing_highlight() # This one clears then applies
 
 
 if __name__ == "__main__":
